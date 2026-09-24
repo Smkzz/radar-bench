@@ -40,7 +40,7 @@ Security = "https://github.com/Smkzz/radar-bench/security/advisories/new"
 
 [project.optional-dependencies]
 # For reproducible development/CI use the transitive requirements-dev.lock.
-dev = ["pytest>=8", "pytest-cov>=5", "hypothesis>=6", "ruff>=0.6", "mypy>=1.11", "bandit>=1.7", "pip-audit>=2.7", "build>=1.2"]
+dev = ["pytest>=9.1.1", "pytest-cov>=5", "hypothesis>=6.168.0", "ruff>=0.16.8", "mypy>=1.11", "bandit>=1.9.4", "pip-audit>=2.7", "build>=1.6.1"]
 
 [project.scripts]
 radar-bench = "radar_bench.cli:main"
