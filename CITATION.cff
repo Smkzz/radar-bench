@@ -6,8 +6,8 @@ message: "Please cite the Radar Bench release and the upstream case sources used
 authors:
   - name: "Smkz-Entertainment"
 license: Apache-2.0
-repository-code: "https://github.com/Smkz-Entertainment/radar-bench"
-url: "https://github.com/Smkz-Entertainment/radar-bench/releases/tag/v1.1.1"
+repository-code: "https://github.com/Smkzz/radar-bench"
+url: "https://github.com/Smkzz/radar-bench/releases/tag/v1.1.1"
 abstract: "A small fail-closed benchmark for executable downstream failure investigation."
 keywords:
   - benchmark

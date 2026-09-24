@@ -4,6 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "radar-bench"
+# Distribution release, independent of the immutable benchmark suite below.
 version = "1.1.1"
 description = "Evidence-first executable benchmark for downstream failure investigation"
 readme = "README.md"
@@ -30,14 +31,15 @@ classifiers = [
   "Topic :: Software Development :: Testing",
 ]
 [project.urls]
-Homepage = "https://github.com/Smkz-Entertainment/radar-bench"
-Repository = "https://github.com/Smkz-Entertainment/radar-bench"
-Issues = "https://github.com/Smkz-Entertainment/radar-bench/issues"
-Changelog = "https://github.com/Smkz-Entertainment/radar-bench/blob/main/CHANGELOG.md"
-Documentation = "https://github.com/Smkz-Entertainment/radar-bench/tree/main/docs"
-Security = "https://github.com/Smkz-Entertainment/radar-bench/security/advisories/new"
+Homepage = "https://github.com/Smkzz/radar-bench"
+Repository = "https://github.com/Smkzz/radar-bench"
+Issues = "https://github.com/Smkzz/radar-bench/issues"
+Changelog = "https://github.com/Smkzz/radar-bench/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/Smkzz/radar-bench/tree/main/docs"
+Security = "https://github.com/Smkzz/radar-bench/security/advisories/new"
 
 [project.optional-dependencies]
+# For reproducible development/CI use the transitive requirements-dev.lock.
 dev = ["pytest>=8", "pytest-cov>=5", "hypothesis>=6", "ruff>=0.6", "mypy>=1.11", "bandit>=1.7", "pip-audit>=2.7", "build>=1.2"]
 
 [project.scripts]
@@ -72,6 +74,9 @@ radar_bench = [
 
 [tool.radar]
 schema_version = "1.0"
+# Suite identities are protocol/corpus versions, not Python package releases.
+current_suite = "decisive-v1.2"
+historical_reference_suite = "decisive-v1.1"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

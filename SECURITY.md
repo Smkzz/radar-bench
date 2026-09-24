@@ -12,7 +12,7 @@ a guarantee of multi-tenant isolation.
 
 ## Reporting a vulnerability
 
-Use [GitHub private vulnerability reporting](https://github.com/Smkz-Entertainment/radar-bench/security/advisories/new)
+Use [GitHub private vulnerability reporting](https://github.com/Smkzz/radar-bench/security/advisories/new)
 for sensitive reports. Do not put secrets, credentials, private artifact bundles,
 or working exploit details in a public issue. Include the affected version or
 commit, a minimal reproduction, impact, and any safe mitigation. The maintainer
