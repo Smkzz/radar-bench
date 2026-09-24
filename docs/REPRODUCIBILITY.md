@@ -24,7 +24,7 @@ From a new checkout with no developer caches:
     radar-bench validate --suite decisive-v1.2 --evaluator-bundle <evaluator-bundle>
     radar-bench evaluate --suite decisive-v1.2 --artifact-root <artifact-root> \
       --candidate-image <digest-pinned-image> \
-      --candidate-argv <candidate-command> --protocol 1.2-jsonl \
+      --candidate-argv <candidate-command> \
       --evaluator-bundle <evaluator-bundle> --output result.json
     radar-bench verify-results result.json
 
