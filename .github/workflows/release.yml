@@ -24,6 +24,7 @@ jobs:
   verify-build:
     name: Verify immutable tag and build artifacts
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -86,8 +87,10 @@ jobs:
       - name: Build wheel and sdist
         run: python -m build --wheel --sdist --outdir "$RUNNER_TEMP/radar-dist"
       - name: Prepare and audit release assets
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
-          python scripts/prepare_release_assets.py --dist "$RUNNER_TEMP/radar-dist" --release-tag "${{ inputs.release_tag }}"
+          python scripts/prepare_release_assets.py --dist "$RUNNER_TEMP/radar-dist" --release-tag "$RELEASE_TAG"
           python scripts/audit_release_assets.py "$RUNNER_TEMP/radar-dist"
       - name: Verify public package contents
         shell: bash
@@ -161,6 +164,7 @@ jobs:
     name: Attest verified release assets
     needs: verify-build
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: read
       actions: read

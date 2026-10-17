@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 from radar_bench.errors import SecurityError
@@ -22,8 +23,8 @@ class SubprocessProvider:
             raise SecurityError(
                 "subprocess provider requires a non-shell command array"
             )
-        if timeout <= 0:
-            raise SecurityError("subprocess provider timeout must be positive")
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise SecurityError("subprocess provider timeout must be finite and positive")
         self.argv, self.timeout = list(argv), timeout
 
     def predict(self, packet: dict[str, Any]) -> dict[str, Any]:
