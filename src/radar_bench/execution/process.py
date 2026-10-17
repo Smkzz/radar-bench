@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import signal
 import subprocess  # nosec B404 - argv is supplied as a validated array
@@ -26,6 +27,7 @@ class BoundedCapture:
     excerpt: str
     payload: bytes = b""
     cleanup_error: str | None = None
+    stderr: bytes = b""
 
 
 def _terminate_tree(process: subprocess.Popen[bytes]) -> str | None:
@@ -45,6 +47,9 @@ def _terminate_tree(process: subprocess.Popen[bytes]) -> str | None:
             return "PROCESS_GROUP_UNAVAILABLE"
         killpg(process.pid, getattr(signal, "SIGKILL", signal.SIGTERM))
         return None
+    except ProcessLookupError:
+        # A normally completed process group may already have disappeared.
+        return None
     except (OSError, subprocess.SubprocessError) as exc:
         return type(exc).__name__
 
@@ -58,9 +63,19 @@ def run_bounded(
     max_output_bytes: int,
     input_data: bytes | None = None,
 ) -> BoundedCapture:
-    """Run an argv without unbounded pipes and kill its process group on limits."""
+    """Bound both streams, retaining stdout as payload and stderr separately.
 
-    if not argv or timeout <= 0 or max_output_bytes <= 0:
+    Deadlines include draining inherited output pipes after the leader exits.
+    Remaining POSIX process-group members are terminated before returning.
+    """
+
+    if (
+        not argv
+        or not math.isfinite(timeout)
+        or timeout <= 0
+        or type(max_output_bytes) is not int
+        or max_output_bytes <= 0
+    ):
         raise ValueError("bounded process arguments and limits must be positive")
     creationflags = (
         int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
@@ -124,7 +139,7 @@ def run_bounded(
     deadline = time.monotonic() + timeout
     timed_out = False
     cleanup_error: str | None = None
-    while process.poll() is None:
+    while process.poll() is None or any(thread.is_alive() for thread in threads):
         if state["overflow"]:
             cleanup_error = _terminate_tree(process)
             break
@@ -141,8 +156,13 @@ def run_bounded(
             process.wait(timeout=10)
         except subprocess.TimeoutExpired:
             cleanup_error = cleanup_error or "PROCESS_CLEANUP_TIMEOUT"
+    if os.name != "nt":
+        # A child can outlive the leader after closing its output descriptors.
+        cleanup_error = cleanup_error or _terminate_tree(process)
     for thread in threads:
         thread.join(timeout=10)
+    if any(thread.is_alive() for thread in threads):
+        cleanup_error = cleanup_error or "OUTPUT_CLEANUP_TIMEOUT"
     combined = bytes(streams["stdout"] + streams["stderr"])
     aggregate = hashlib.sha256()
     for name in ("stdout", "stderr"):
@@ -158,8 +178,9 @@ def run_bounded(
         output_limit_exceeded=bool(state["overflow"]),
         timed_out=timed_out,
         excerpt=excerpt,
-        payload=combined,
+        payload=bytes(streams["stdout"]),
         cleanup_error=cleanup_error,
+        stderr=bytes(streams["stderr"]),
     )
 
 

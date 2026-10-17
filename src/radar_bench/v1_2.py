@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import queue
 import re
@@ -837,6 +838,8 @@ class ExternalCandidateProtocol:
     """Stateful JSONL protocol executed only through the hardened Docker argv."""
 
     def __init__(self, candidate_image: str | Sequence[str], candidate_argv: Sequence[str] | None = None, *, working_directory: Path, timeout_seconds: float = 30.0, max_line_bytes: int = 256 * 1024, max_stdout_bytes: int = 4 * 1024 * 1024, max_stderr_bytes: int = 4 * 1024 * 1024, max_total_output_bytes: int = 8 * 1024 * 1024) -> None:
+        if not math.isfinite(timeout_seconds) or timeout_seconds < 0:
+            raise ValueError("candidate timeout must be finite and non-negative")
         self.working_directory = working_directory.resolve()
         self.timeout_seconds = timeout_seconds
         self.max_line_bytes = max_line_bytes
@@ -1011,6 +1014,36 @@ class ExternalCandidateProtocol:
         }
         finalized: set[str] = set()
         errors: list[str] = []
+        input_thread: threading.Thread | None = None
+
+        def write_payload(payload: bytes, deadline: float) -> None:
+            nonlocal input_thread
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("candidate input deadline expired")
+            failures: list[Exception] = []
+
+            def write() -> None:
+                try:
+                    if process.stdin is None:
+                        raise BrokenPipeError("candidate stdin is unavailable")
+                    process.stdin.write(payload)
+                    process.stdin.flush()
+                except Exception as exc:
+                    failures.append(exc)
+
+            # A pipe write can block even when stdout/stderr are bounded. Keep
+            # the evaluator's deadline on the calling thread and terminate the
+            # candidate in the normal cleanup path when its input stalls.
+            input_thread = threading.Thread(target=write, daemon=True)
+            input_thread.start()
+            input_thread.join(timeout=remaining)
+            if input_thread.is_alive():
+                raise TimeoutError("candidate is not consuming protocol input")
+            input_thread = None
+            if failures:
+                raise OSError("candidate stdin write failed") from failures[0]
+
         try:
             inspect_errors = self._actual_container_config()
             if inspect_errors:
@@ -1019,10 +1052,9 @@ class ExternalCandidateProtocol:
             if process.stdin is None:
                 errors.append("CANDIDATE_PROCESS_STDIN_UNAVAILABLE")
                 return {"status": "BLOCKED", "network_denied": False, "predictions": {}, "ledgers": {}, "errors": errors}
-            for packet in packet_list:
-                process.stdin.write((json.dumps(packet.as_json(), sort_keys=True) + "\n").encode("utf-8"))
-            process.stdin.flush()
             deadline = time.monotonic() + self.timeout_seconds
+            for packet in packet_list:
+                write_payload((json.dumps(packet.as_json(), sort_keys=True) + "\n").encode("utf-8"), deadline)
             ended = False
             while time.monotonic() < deadline and len(finals) < len(packet_list):
                 if overflow.is_set():
@@ -1047,7 +1079,7 @@ class ExternalCandidateProtocol:
                     errors.append("CANDIDATE_RESPONSE_NOT_OBJECT")
                     continue
                 episode_id = message.get("episode_id")
-                if episode_id not in mapping:
+                if not isinstance(episode_id, str) or episode_id not in mapping:
                     errors.append("UNKNOWN_EPISODE_ID")
                     continue
                 message_errors = validate_protocol_message(message)
@@ -1078,8 +1110,7 @@ class ExternalCandidateProtocol:
                     if process.stdin is None:
                         errors.append("CANDIDATE_PROCESS_STDIN_UNAVAILABLE")
                         break
-                    process.stdin.write((json.dumps(result, sort_keys=True) + "\n").encode("utf-8"))
-                    process.stdin.flush()
+                    write_payload((json.dumps(result, sort_keys=True) + "\n").encode("utf-8"), deadline)
                 else:
                     if str(episode_id) in finals:
                         errors.append("DUPLICATE_TERMINAL_RESULT")
@@ -1103,6 +1134,8 @@ class ExternalCandidateProtocol:
                     errors.append("CANDIDATE_PROCESS_DID_NOT_EXIT_AFTER_FINAL")
             if process.returncode not in (None, 0):
                 errors.append("CANDIDATE_NONZERO_EXIT")
+        except TimeoutError:
+            errors.append("CANDIDATE_TIMEOUT")
         except (BrokenPipeError, OSError):
             errors.append("CANDIDATE_PROCESS_IO_ERROR")
         finally:
@@ -1117,6 +1150,10 @@ class ExternalCandidateProtocol:
                     errors.append("CANDIDATE_CONTAINER_CLEANUP_FAILED")
             except (OSError, subprocess.SubprocessError):
                 errors.append("CANDIDATE_CONTAINER_CLEANUP_FAILED")
+            if input_thread is not None:
+                input_thread.join(timeout=1)
+                if input_thread.is_alive():
+                    errors.append("CANDIDATE_STDIN_CLEANUP_FAILED")
             self._candidate_process = None
         return {"status": "COMPLETED" if not errors and len(finals) == len(packet_list) else "BLOCKED", "network_denied": True, "predictions": finals, "ledgers": {key: value.summary() for key, value in ledgers.items()}, "errors": errors, "exit_code": process.returncode}
 

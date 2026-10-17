@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Keep bounded subprocess stdout separate from stderr so provider predictions
+  and Docker metadata remain parseable when diagnostics are emitted.
+- Apply subprocess deadlines while descendants retain output pipes, terminate
+  remaining POSIX process-group members, report incomplete pipe cleanup, and
+  reject non-finite timeouts before starting work.
+- Bound candidate JSONL input writes by the protocol deadline, including the
+  initial episode packets, so a candidate that does not read cannot block the
+  evaluator indefinitely. Reject non-string episode IDs before lookup.
+- Refuse symlinked artifact output directories and provenance files before
+  acquisition. Publish provenance atomically to preserve unrelated hard links.
+- Update the locked development dependency `urllib3` to 2.8.0 with verified
+  distribution hashes, and require pytest 9.0.3 or later in the development extra.
+
 ## 1.1.1 - 2026-08-13
 
 Radar Bench is an evidence-first executable benchmark for testing whether an

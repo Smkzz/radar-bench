@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import time
 
 import pytest
 
@@ -74,3 +75,38 @@ def test_terminate_tree_posix_and_error_paths(monkeypatch: pytest.MonkeyPatch) -
         raise OSError("no process")
     monkeypatch.setattr(process_module.os, "killpg", fail, raising=False)
     assert process_module._terminate_tree(FakeProcess()) == "OSError"
+
+
+def test_bounded_process_keeps_diagnostics_out_of_stdout_payload() -> None:
+    result = run_bounded(
+        [sys.executable, "-c", "import sys; print('{}'); print('diagnostic', file=sys.stderr)"],
+        timeout=2,
+        max_output_bytes=1024,
+    )
+    assert result.payload.replace(b"\r\n", b"\n") == b"{}\n"
+    assert result.stderr.replace(b"\r\n", b"\n") == b"diagnostic\n"
+    assert result.output_bytes == len(result.payload) + len(result.stderr)
+    assert "diagnostic" in result.excerpt
+
+
+@pytest.mark.parametrize("timeout", [float("nan"), float("inf"), float("-inf")])
+def test_nonfinite_timeout_is_rejected_before_launch(timeout: float) -> None:
+    with pytest.raises(ValueError):
+        run_bounded([sys.executable, "-c", "pass"], timeout=timeout, max_output_bytes=1024)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process-group contract")
+def test_exited_parent_cannot_leave_output_pipes_open_past_deadline() -> None:
+    # The child is finite even against an unfixed runner, so a failing regression
+    # does not leave an indefinite background process on the test machine.
+    script = (
+        "import subprocess, sys; "
+        "subprocess.Popen([sys.executable, '-c', "
+        "'import time; time.sleep(2); print(\"late-child-output\")'])"
+    )
+    started = time.monotonic()
+    result = run_bounded([sys.executable, "-c", script], timeout=0.2, max_output_bytes=1024)
+    assert result.timed_out
+    assert result.cleanup_error is None
+    assert b"late-child-output" not in result.payload
+    assert time.monotonic() - started < 1.5

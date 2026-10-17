@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -565,6 +566,30 @@ def fetch_artifacts(root: Path, suite_id: str, artifact_root: Path | None = None
         return {"status": "INVALID", "suite_id": suite_id, "errors": [str(exc)], "network_used": False}
     external_root = (artifact_root or default_artifact_root(root, suite_id)).resolve()
     external_root.mkdir(parents=True, exist_ok=True)
+    unsafe_outputs = [
+        bundle.artifact_id
+        for bundle in bundles
+        if (external_root / bundle.artifact_id).is_symlink()
+        or (
+            (external_root / bundle.artifact_id).exists()
+            and not (external_root / bundle.artifact_id).is_dir()
+        )
+    ]
+    provenance_path = external_root / "provenance.json"
+    if provenance_path.is_symlink() or (
+        provenance_path.exists() and not provenance_path.is_file()
+    ):
+        unsafe_outputs.append("provenance.json")
+    if unsafe_outputs:
+        return {
+            "status": "BLOCKED",
+            "suite_id": suite_id,
+            "artifact_root": _redacted_root(),
+            "network_used": False,
+            "fetched_files": [],
+            "bundles": [],
+            "errors": [f"refusing unsafe artifact output: {name}" for name in unsafe_outputs],
+        }
     cache: dict[str, str] = {}
     errors: list[str] = []
     fetched: list[str] = []
@@ -599,11 +624,20 @@ def fetch_artifacts(root: Path, suite_id: str, artifact_root: Path | None = None
             "redistribution_status": "RECONSTRUCT_ONLY",
             "bundles": verification["bundles"],
         }
-        (external_root / "provenance.json").write_text(
-            json.dumps(provenance, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-            newline="\n",
-        )
+        # Replace a complete regular file instead of truncating a destination
+        # that could share an inode with an unrelated file via a hard link.
+        temporary: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", newline="\n", dir=external_root,
+                prefix=".provenance-", suffix=".json", delete=False,
+            ) as handle:
+                temporary = Path(handle.name)
+                handle.write(json.dumps(provenance, indent=2, sort_keys=True) + "\n")
+            os.replace(temporary, provenance_path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
     return {
         "status": status,
         "suite_id": suite_id,
